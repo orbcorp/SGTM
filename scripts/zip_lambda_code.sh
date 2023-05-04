@@ -14,7 +14,7 @@ source build-env/bin/activate
 pip3 install -r requirements.txt
 
 # Zip the dependencies into the output archive
-cd build-env/lib/python3.7/site-packages
+cd build-env/lib/python3.10/site-packages
 rm -f ${OLDPWD}/build/function.zip
 zip -r9 ${OLDPWD}/build/function.zip .
 
