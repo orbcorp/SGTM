@@ -176,7 +176,6 @@ def maybe_add_automerge_warning_comment(pull_request: PullRequest):
             and not _pull_request_has_automerge_comment(pull_request)
             and not pull_request.is_approved()
         ):
-
             github_client.add_pr_comment(
                 owner, repo_name, pr_number, AUTOMERGE_COMMENT_WARNING
             )
@@ -188,6 +187,9 @@ def maybe_automerge_pull_request(pull_request: PullRequest) -> bool:
         logger.info(
             f"Pull request {pull_request.id()} is able to be automerged, automerging now"
         )
+        logger.info(f"Build status: {pull_request.build_status()}")
+        logger.info(f"Commmits: {[pull_request.commits()]}")
+        logger.info(f"Is mergeable: {pull_request.mergeable()}")
         github_client.merge_pull_request(
             pull_request.repository_owner_handle(),
             pull_request.repository_name(),
