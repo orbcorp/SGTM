@@ -21,9 +21,9 @@ class Commit(object):
         # Only return success if statusCheckRollup is also success
         logger.info("status: %s", status)
         logger.info("status check rollup: %s", status_check_rollup)
-        if status == Commit.BUILD_SUCCESSFUL:
-            if status_check_rollup != Commit.BUILD_SUCCESSFUL:
-                logger.info("status check rollup is not success when status is")
+        if status.get("state", None) == Commit.BUILD_SUCCESSFUL:
+            if status_check_rollup.get("state", None) != Commit.BUILD_SUCCESSFUL:
+                logger.info("status check rollup is not success when status is success")
                 status = status_check_rollup
 
         if status is None:
