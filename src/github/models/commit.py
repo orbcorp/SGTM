@@ -1,4 +1,5 @@
 from typing import Dict, Any, Optional
+from src.logger import logger
 import copy
 
 
@@ -18,8 +19,11 @@ class Commit(object):
             status = status_check_rollup
             
         # Only return success if statusCheckRollup is also success
+        logger.info("status: %s", status)
+        logger.info("status check rollup: %s", status_check_rollup)
         if status == Commit.BUILD_SUCCESSFUL:
             if status_check_rollup != Commit.BUILD_SUCCESSFUL:
+                logger.info("status check rollup is not success when status is")
                 status = status_check_rollup
 
         if status is None:
