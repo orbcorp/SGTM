@@ -133,6 +133,14 @@ def _handle_status_webhook(payload: dict) -> HttpResponse:
         github_controller.upsert_pull_request(pull_request)
         return HttpResponse("200")
 
+def _handle_check_suite_webhook(payload: dict) -> HttpResponse:
+    logger.info(f"Received check_suite webhook: {payload}")
+    return HttpResponse("200")
+
+def _handle_check_run_webhook(payload: dict) -> HttpResponse:
+    logger.info(f"Received check_run webhook: {payload}")
+    return HttpResponse("200")
+
 
 _events_map = {
     "pull_request": _handle_pull_request_webhook,
@@ -140,6 +148,8 @@ _events_map = {
     "pull_request_review": _handle_pull_request_review_webhook,
     "status": _handle_status_webhook,
     "pull_request_review_comment": _handle_pull_request_review_comment,
+    "check_suite": _handle_check_suite_webhook,
+    "check_run": _handle_check_run_webhook,
 }
 
 

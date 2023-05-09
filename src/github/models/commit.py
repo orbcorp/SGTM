@@ -1,5 +1,4 @@
 from typing import Dict, Any, Optional
-from src.logger import logger
 import copy
 
 
@@ -13,19 +12,10 @@ class Commit(object):
 
     # A commit's status can be None while the logic to start tests runs right after committing.
     def status(self) -> Optional[str]:
-        status = self._raw["commit"].get("status")
-        status_check_rollup = self._raw["commit"].get("statusCheckRollup")
+        status = self._raw["commit"].get("statusCheckRollup")
         if status is None:
-            status = status_check_rollup
+            status = self._raw["commit"].get("status")
             
-        # Only return success if statusCheckRollup is also success
-        logger.info("status: %s", status)
-        logger.info("status check rollup: %s", status_check_rollup)
-        if status.get("state", None) == Commit.BUILD_SUCCESSFUL:
-            if status_check_rollup.get("state", None) != Commit.BUILD_SUCCESSFUL:
-                logger.info("status check rollup is not success when status is success")
-                status = status_check_rollup
-
         if status is None:
             return None
         else:
