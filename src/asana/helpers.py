@@ -275,7 +275,7 @@ def create_attachments(body_text: str, task_id: str) -> None:
                     attachment.file_name,
                     attachment.image_type,
                 )
-        except Exception as error:
+        except Exception:
             logger.warn("Attachment creation failed. Creating task comment anyway.")
 
 
@@ -298,16 +298,26 @@ def get_linked_task_ids(pull_request: PullRequest) -> List[str]:
     stripped_body_lines = (line.strip() for line in body_lines)
     task_url_line = None
     seen_asana_tasks_line = False
+    task_ids = []
     for line in stripped_body_lines:
         if seen_asana_tasks_line:
             task_url_line = line
             break
-        if line.startswith("Asana tasks:"):
+        if line.startswith("Asana tasks:") or line.startswith("Task Link:"):
+            logger.info("Found Asana tasks line: ", line)
             seen_asana_tasks_line = True
+            split_line = line.split()
+            # Grab any task urls in that line
+            for url in split_line[2:]:
+                maybe_id = re.search("\d+(?!.*\d)", url)
+                if maybe_id is not None:
+                    task_ids.append(maybe_id.group())
 
+
+    # Grab any task urls in the next line
     if task_url_line:
+        logger.info("Line after Asana tasks line: ", task_url_line)
         task_urls = task_url_line.split()
-        task_ids = []
         for url in task_urls:
             maybe_id = re.search("\d+(?!.*\d)", url)
             if maybe_id is not None:

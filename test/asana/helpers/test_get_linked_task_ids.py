@@ -22,20 +22,20 @@ class TestGetLinkedTaskIds(BaseClass):
         self.assertCountEqual(asana_helpers.get_linked_task_ids(pull_request), task_ids)
 
     def test_returns_empty_list_if_no_asana_tasks_line(self):
-        pull_request = build(builder.pull_request().body(f"Blah blah blah\nblah\n"))
+        pull_request = build(builder.pull_request().body("Blah blah blah\nblah\n"))
 
         self.assertCountEqual(asana_helpers.get_linked_task_ids(pull_request), [])
 
     def test_returns_empty_list_if_no_linked_tasks(self):
         pull_request = build(
-            builder.pull_request().body(f"Blah blah blah\nblah\nAsana tasks:")
+            builder.pull_request().body("Blah blah blah\nblah\nAsana tasks:")
         )
 
         self.assertCountEqual(asana_helpers.get_linked_task_ids(pull_request), [])
 
     def test_returns_empty_list_for_malformed_description(self):
         pull_request = build(
-            builder.pull_request().body(f"Blah blah blah\nblah\nAsana tasks:\neng jank")
+            builder.pull_request().body("Blah blah blah\nblah\nAsana tasks:\neng jank")
         )
 
         self.assertCountEqual(asana_helpers.get_linked_task_ids(pull_request), [])
