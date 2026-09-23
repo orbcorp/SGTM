@@ -21,7 +21,6 @@ def create_task(repository_id: str) -> Optional[str]:
 
 
 def task_is_reachable(task_id: str) -> bool:
-    """Whether we can read the task -- checked before binding to it."""
     return asana_client.task_exists(task_id)
 
 

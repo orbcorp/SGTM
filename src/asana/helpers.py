@@ -287,11 +287,16 @@ _review_action_to_text_map: Dict[ReviewState, str] = {
 }
 
 
-# The task-link section, in either the markdown-heading form the PR template
-# renders ("## Task Link") or the inline form ("Task Link:" / "Asana tasks:").
-_TASK_LINK_MARKER = re.compile(
-    r"^\s*(?:#{1,6}\s*)?(?:task\s*link|asana\s*tasks?)\b\s*:?\s*(?P<rest>.*)$",
-    re.IGNORECASE,
+# The task-link section opens in one of two forms. A markdown heading, which is
+# what the PR template renders; or an inline marker, which needs the colon --
+# without it "Task Link is not required, see <url>" would read as a marker and
+# bind the pull request to whatever that sentence happened to mention.
+_MARKER = r"(?:task\s*link|asana\s*tasks?)"
+_TASK_LINK_HEADING = re.compile(
+    rf"^\s*#{{1,6}}\s*{_MARKER}\s*:?\s*(?P<rest>.*)$", re.IGNORECASE
+)
+_TASK_LINK_INLINE = re.compile(
+    rf"^\s*{_MARKER}\s*:\s*(?P<rest>.*)$", re.IGNORECASE
 )
 _MARKDOWN_HEADING = re.compile(r"^\s*#{1,6}\s")
 _HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
@@ -305,7 +310,7 @@ _SGTM_INJECTED_LINK = re.compile(
 # Matching the shape rather than "the last number in the string" keeps a
 # trailing "?project=42" or "(see PR-1234)" from being read as a task.
 _ASANA_TASK_URL = re.compile(
-    r"app\.asana\.com/(?:"
+    r"https?://app\.asana\.com/(?:"
     r"1/\d+/(?:[a-z_]+/\d+/)*task/(?P<new>\d+)"
     r"|"
     r"0/\d+/(?P<old>\d+)"
@@ -332,14 +337,24 @@ def _task_link_section(body: str) -> str:
     text = _SGTM_INJECTED_LINK.sub("", _HTML_COMMENT.sub("", body))
     lines = text.splitlines()
     for index, line in enumerate(lines):
-        marker = _TASK_LINK_MARKER.match(line)
+        heading = _TASK_LINK_HEADING.match(line)
+        marker = heading or _TASK_LINK_INLINE.match(line)
         if marker is None:
             continue
+
         section = [marker.group("rest")]
         for following in lines[index + 1 :]:
             if _MARKDOWN_HEADING.match(following):
                 break
-            if not following.strip() and any(line.strip() for line in section):
+            # A heading owns everything up to the next heading, blank lines
+            # included -- an intro paragraph above the url is still the same
+            # section. An inline marker has no closing delimiter, so it ends at
+            # the first blank line after something was written.
+            if (
+                not heading
+                and not following.strip()
+                and any(collected.strip() for collected in section)
+            ):
                 break
             section.append(following)
         return "\n".join(section)

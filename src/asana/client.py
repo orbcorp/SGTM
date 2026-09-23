@@ -113,13 +113,9 @@ class AsanaClient(object):
 
     def task_exists(self, task_id: str) -> bool:
         """
-        Whether the Asana task can be read with our credentials.
-
-        False covers both "no such task" and "we cannot see it" -- a private
-        project the SGTM user is not in, or a deleted task. Callers use this
-        before binding a pull request to a task, because that binding is
-        permanent and a bad one makes every later webhook for the pull
-        request fail.
+        Whether the task can be read with the SGTM user's credentials. False
+        covers both "no such task" and "we cannot see it" -- a deleted task,
+        or a private project the SGTM user is not a member of
         """
         validate_object_id(task_id, "AsanaClient.task_exists requires a task_id")
         try:
@@ -192,11 +188,6 @@ def add_comment(task_id: str, comment_body: str) -> str:
 
 
 def task_exists(task_id: str) -> bool:
-    """
-    Using the singleton instance of AsanaClient, creating it if necessary:
-
-    Whether the Asana task can be read with our credentials.
-    """
     return AsanaClient.singleton().task_exists(task_id)
 
 

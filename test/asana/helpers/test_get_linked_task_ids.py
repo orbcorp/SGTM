@@ -107,6 +107,27 @@ class TestGetLinkedTaskIds(BaseClass):
     def test_returns_empty_for_a_malformed_description(self):
         self.assertEqual(self._ids("Blah\nTask Link:\neng jank"), [])
 
+    def test_prose_beginning_with_the_words_is_not_a_marker(self):
+        # An inline marker needs its colon, or this sentence binds the PR to
+        # whatever task it happens to mention.
+        body = f"Task Link is not required; see {NEW_STYLE_URL}"
+        self.assertEqual(self._ids(body), [])
+
+    def test_a_heading_section_survives_blank_lines(self):
+        # A heading owns everything up to the next heading. An intro paragraph
+        # and a blank line above the url are still the same section.
+        body = f"## Task Link\nTracking this under:\n\n{NEW_STYLE_URL}\n\n## Testing\n"
+        self.assertEqual(self._ids(body), [TASK_ID])
+
+    def test_an_inline_marker_ends_at_a_blank_line(self):
+        body = f"Task Link:\nsome note\n\nunrelated {NEW_STYLE_URL}\n"
+        self.assertEqual(self._ids(body), [])
+
+    def test_requires_a_real_asana_url(self):
+        # "app.asana.com/" appearing inside some other host is not a task link.
+        body = f"Task Link: https://example.com/app.asana.com/0/1/{TASK_ID}"
+        self.assertEqual(self._ids(body), [])
+
     def test_does_not_match_a_word_merely_starting_with_the_marker(self):
         self.assertEqual(self._ids(f"Task Linkage is broken, see {NEW_STYLE_URL}"), [])
 
