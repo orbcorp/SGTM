@@ -5,6 +5,7 @@ import src.github.client as github_client
 import src.github.controller as github_controller
 import src.asana.controller as asana_controller
 import src.dynamodb.client as dynamodb_client
+import src.asana.helpers as asana_helpers
 from test.impl.builders import builder
 
 
@@ -113,6 +114,85 @@ class GithubControllerTest(MockDynamoDbTestCase):
             pull_request.number(),
             pull_request.author_handle(),
         )
+
+
+class LinkOnlyTest(MockDynamoDbTestCase):
+    """Behaviour of upsert_pull_request under SGTM_FEATURE__LINK_ONLY_ENABLED."""
+
+    LINKED_TASK = "1218505056963671"
+    BODY_WITH_LINK = (
+        "## Task Link\n"
+        "https://app.asana.com/1/548620057800108/project/1/task/1218505056963671\n"
+    )
+
+    @patch.object(github_controller, "SGTM_FEATURE__LINK_ONLY_ENABLED", True)
+    @patch.object(asana_controller, "update_task")
+    @patch.object(asana_controller, "create_task")
+    def test_links_the_existing_task_instead_of_creating_one(
+        self, create_task_mock, update_task_mock
+    ):
+        pull_request = builder.pull_request().body(self.BODY_WITH_LINK).build()
+
+        github_controller.upsert_pull_request(pull_request)
+
+        create_task_mock.assert_not_called()
+        update_task_mock.assert_called_with(pull_request, self.LINKED_TASK)
+        self.assertEqual(
+            dynamodb_client.get_asana_id_from_github_node_id(pull_request.id()),
+            self.LINKED_TASK,
+        )
+
+    @patch.object(github_controller, "SGTM_FEATURE__LINK_ONLY_ENABLED", True)
+    @patch.object(asana_controller, "update_task")
+    @patch.object(asana_controller, "create_task")
+    def test_does_nothing_when_no_task_is_linked(
+        self, create_task_mock, update_task_mock
+    ):
+        pull_request = builder.pull_request().body("no link here").build()
+
+        github_controller.upsert_pull_request(pull_request)
+
+        create_task_mock.assert_not_called()
+        update_task_mock.assert_not_called()
+        self.assertIsNone(
+            dynamodb_client.get_asana_id_from_github_node_id(pull_request.id())
+        )
+
+    @patch.object(github_controller, "SGTM_FEATURE__LINK_ONLY_ENABLED", False)
+    @patch.object(asana_controller, "update_task")
+    @patch.object(asana_controller, "create_task")
+    def test_still_creates_while_the_flag_is_off(
+        self, create_task_mock, update_task_mock
+    ):
+        # Milestone 3 ships the parser in dry-run: it resolves and logs the
+        # linked task, but behaviour is unchanged until the flag flips.
+        new_task_id = uuid4().hex
+        create_task_mock.return_value = new_task_id
+        pull_request = builder.pull_request().body(self.BODY_WITH_LINK).build()
+
+        with patch.object(github_controller, "_add_asana_task_to_pull_request"):
+            with patch.object(asana_helpers, "create_attachments"):
+                github_controller.upsert_pull_request(pull_request)
+
+        create_task_mock.assert_called_once()
+        update_task_mock.assert_called_with(pull_request, new_task_id)
+
+    @patch.object(github_controller, "SGTM_FEATURE__LINK_ONLY_ENABLED", True)
+    @patch.object(asana_controller, "update_task")
+    @patch.object(asana_controller, "create_task")
+    def test_an_existing_mapping_still_wins(self, create_task_mock, update_task_mock):
+        # A pull request SGTM already made a task for keeps that task, even if
+        # the author later pastes a different link.
+        pull_request = builder.pull_request().body(self.BODY_WITH_LINK).build()
+        existing = uuid4().hex
+        dynamodb_client.insert_github_node_to_asana_id_mapping(
+            pull_request.id(), existing
+        )
+
+        github_controller.upsert_pull_request(pull_request)
+
+        create_task_mock.assert_not_called()
+        update_task_mock.assert_called_with(pull_request, existing)
 
 
 if __name__ == "__main__":

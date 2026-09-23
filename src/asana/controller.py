@@ -4,6 +4,7 @@ from . import helpers as asana_helpers
 from . import logic as asana_logic
 from src.github.models import Comment, PullRequest, Review
 from src.logger import logger
+from src.config import SGTM_FEATURE__LINK_ONLY_ENABLED
 from src.dynamodb import client as dynamodb_client
 from src.github import helpers as github_helpers
 
@@ -24,6 +25,17 @@ def update_task(pull_request: PullRequest, task_id: str):
     pr_url = pull_request.url()
     logger.info(f"Updating task {task_url} for pull request {pr_url}")
 
+    if SGTM_FEATURE__LINK_ONLY_ENABLED:
+        # Never write a field on a task SGTM did not create -- additions only.
+        # The pull request announces itself: codez's create_asana_attachment
+        # workflow attaches the GitHub card, which is its own story in the
+        # activity feed. A comment here would just duplicate it.
+        followers = asana_helpers.task_followers_from_pull_request(pull_request)
+        if followers:
+            asana_client.add_followers(task_id, followers)
+        maybe_complete_tasks_on_merge(pull_request)
+        return
+
     fields = asana_helpers.extract_task_fields_from_pull_request(pull_request)
 
     # TODO: Should extract_task_fields_from_pull_request be broken into two
@@ -34,7 +46,8 @@ def update_task(pull_request: PullRequest, task_id: str):
         if k in ("assignee", "name", "html_notes", "completed", "custom_fields")
     }
     asana_client.update_task(task_id, update_task_fields)
-    asana_client.add_followers(task_id, fields["followers"])
+    if fields["followers"]:
+        asana_client.add_followers(task_id, fields["followers"])
     maybe_complete_tasks_on_merge(pull_request)
 
 

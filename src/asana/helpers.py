@@ -287,44 +287,78 @@ _review_action_to_text_map: Dict[ReviewState, str] = {
 }
 
 
+# The task-link section, in either the markdown-heading form the PR template
+# renders ("## Task Link") or the inline form ("Task Link:" / "Asana tasks:").
+_TASK_LINK_MARKER = re.compile(
+    r"^\s*(?:#{1,6}\s*)?(?:task\s*link|asana\s*tasks?)\b\s*:?\s*(?P<rest>.*)$",
+    re.IGNORECASE,
+)
+_MARKDOWN_HEADING = re.compile(r"^\s*#{1,6}\s")
+_HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
+_SGTM_INJECTED_LINK = re.compile(
+    r"Pull Request synchronized with \[Asana task\]\([^)]*\)", re.IGNORECASE
+)
+
+# Asana task urls come in two shapes, and only the task id is reliable:
+#   https://app.asana.com/0/<project>/<task>
+#   https://app.asana.com/1/<workspace>/project/<project>/task/<task>
+# Matching the shape rather than "the last number in the string" keeps a
+# trailing "?project=42" or "(see PR-1234)" from being read as a task.
+_ASANA_TASK_URL = re.compile(
+    r"app\.asana\.com/(?:"
+    r"1/\d+/(?:[a-z_]+/\d+/)*task/(?P<new>\d+)"
+    r"|"
+    r"0/\d+/(?P<old>\d+)"
+    r")",
+    re.IGNORECASE,
+)
+
+# Asana gids are long. A short number came from prose, not from a task.
+_MIN_TASK_ID_LENGTH = 9
+
+
+def _task_link_section(body: str) -> str:
+    """
+    Returns the part of a PR description that belongs to the task-link section.
+
+    Scoped deliberately: pull requests routinely mention *other* Asana tasks in
+    prose ("Not addressed here: ...", "Related but separate: ..."), and reading
+    the whole body would bind the PR to whichever of those came first.
+
+    Html comments are dropped before matching, because the PR template carries
+    an example Asana url inside one. SGTM's own injected link is dropped too,
+    so it can never link the task it just created.
+    """
+    text = _SGTM_INJECTED_LINK.sub("", _HTML_COMMENT.sub("", body))
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        marker = _TASK_LINK_MARKER.match(line)
+        if marker is None:
+            continue
+        section = [marker.group("rest")]
+        for following in lines[index + 1 :]:
+            if _MARKDOWN_HEADING.match(following):
+                break
+            if not following.strip() and any(line.strip() for line in section):
+                break
+            section.append(following)
+        return "\n".join(section)
+    return ""
+
+
 def get_linked_task_ids(pull_request: PullRequest) -> List[str]:
     """
-    Extracts linked task ids from the body of the PR.
-    We expect linked tasks to be in the description in a line under the line containing "Asana tasks:".
+    Extracts the Asana task ids a pull request links, from the task-link section
+    of its description.
 
-    :return: Returns a list of task ids.
+    :return: Returns a list of task ids, in the order they appear.
     """
-    body_lines = pull_request.body().splitlines()
-    stripped_body_lines = (line.strip() for line in body_lines)
-    task_url_line = None
-    seen_asana_tasks_line = False
-    task_ids = []
-    for line in stripped_body_lines:
-        if seen_asana_tasks_line:
-            task_url_line = line
-            break
-        if line.startswith("Asana tasks:") or line.startswith("Task Link:"):
-            logger.info("Found Asana tasks line: ", line)
-            seen_asana_tasks_line = True
-            split_line = line.split()
-            # Grab any task urls in that line
-            for url in split_line[2:]:
-                maybe_id = re.search("\d+(?!.*\d)", url)
-                if maybe_id is not None:
-                    task_ids.append(maybe_id.group())
-
-
-    # Grab any task urls in the next line
-    if task_url_line:
-        logger.info("Line after Asana tasks line: ", task_url_line)
-        task_urls = task_url_line.split()
-        for url in task_urls:
-            maybe_id = re.search("\d+(?!.*\d)", url)
-            if maybe_id is not None:
-                task_ids.append(maybe_id.group())
-        return task_ids
-    else:
-        return []
+    task_ids: List[str] = []
+    for match in _ASANA_TASK_URL.finditer(_task_link_section(pull_request.body())):
+        task_id = match.group("new") or match.group("old")
+        if len(task_id) >= _MIN_TASK_ID_LENGTH and task_id not in task_ids:
+            task_ids.append(task_id)
+    return task_ids
 
 
 def asana_comment_from_github_review(review: Review) -> str:
@@ -436,6 +470,11 @@ def _task_completion_from_pull_request(pull_request: PullRequest) -> StatusReaso
             False,
             "the pull request hasn't yet been approved by a reviewer after merging.",
         )
+
+
+def task_followers_from_pull_request(pull_request: PullRequest) -> List[str]:
+    """Followers alone, without the Asana round trip that custom fields need."""
+    return _task_followers_from_pull_request(pull_request)
 
 
 def _task_followers_from_pull_request(pull_request: PullRequest):
