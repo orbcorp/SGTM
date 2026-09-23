@@ -6,6 +6,7 @@ import src.github.controller as github_controller
 import src.asana.controller as asana_controller
 import src.dynamodb.client as dynamodb_client
 import src.asana.helpers as asana_helpers
+from src.github.models import ReviewState
 from test.impl.builders import builder
 
 
@@ -193,6 +194,77 @@ class LinkOnlyTest(MockDynamoDbTestCase):
 
         create_task_mock.assert_not_called()
         update_task_mock.assert_called_with(pull_request, existing)
+
+
+class LinkOnlyRelayTest(MockDynamoDbTestCase):
+    """What reaches a task once ordinary chatter stops being relayed."""
+
+    def setUp(self):
+        self.pull_request = builder.pull_request().build()
+        self.task_id = uuid4().hex
+        dynamodb_client.insert_github_node_to_asana_id_mapping(
+            self.pull_request.id(), self.task_id
+        )
+
+    @patch.object(github_controller, "SGTM_FEATURE__LINK_ONLY_ENABLED", True)
+    @patch.object(asana_controller, "update_task")
+    @patch.object(asana_controller, "upsert_github_comment_to_task")
+    def test_ordinary_comments_are_not_relayed(self, upsert_comment_mock, update_mock):
+        github_controller.upsert_comment(self.pull_request, builder.comment().build())
+
+        upsert_comment_mock.assert_not_called()
+        update_mock.assert_not_called()
+
+    @patch.object(github_controller, "SGTM_FEATURE__LINK_ONLY_ENABLED", False)
+    @patch.object(asana_controller, "update_task")
+    @patch.object(asana_controller, "upsert_github_comment_to_task")
+    def test_ordinary_comments_still_relay_while_the_flag_is_off(
+        self, upsert_comment_mock, update_mock
+    ):
+        github_controller.upsert_comment(self.pull_request, builder.comment().build())
+
+        upsert_comment_mock.assert_called_once()
+
+    @patch.object(github_controller, "SGTM_FEATURE__LINK_ONLY_ENABLED", True)
+    @patch.object(github_controller, "assign_pull_request_to_author")
+    @patch.object(asana_controller, "update_task")
+    @patch.object(asana_controller, "upsert_github_review_to_task")
+    def test_comment_only_reviews_are_not_relayed(
+        self, upsert_review_mock, update_mock, assign_mock
+    ):
+        review = builder.review().state(ReviewState.COMMENTED).build()
+
+        github_controller.upsert_review(self.pull_request, review)
+
+        upsert_review_mock.assert_not_called()
+        assign_mock.assert_not_called()
+
+    @patch.object(github_controller, "SGTM_FEATURE__LINK_ONLY_ENABLED", True)
+    @patch.object(github_controller, "assign_pull_request_to_author")
+    @patch.object(asana_controller, "update_task")
+    @patch.object(asana_controller, "upsert_github_review_to_task")
+    def test_approvals_are_relayed_and_bounce_the_pull_request(
+        self, upsert_review_mock, update_mock, assign_mock
+    ):
+        review = builder.review().state(ReviewState.APPROVED).build()
+
+        github_controller.upsert_review(self.pull_request, review)
+
+        upsert_review_mock.assert_called_once()
+        assign_mock.assert_called_once()
+
+    @patch.object(github_controller, "SGTM_FEATURE__LINK_ONLY_ENABLED", True)
+    @patch.object(github_controller, "assign_pull_request_to_author")
+    @patch.object(asana_controller, "update_task")
+    @patch.object(asana_controller, "upsert_github_review_to_task")
+    def test_changes_requested_is_relayed(
+        self, upsert_review_mock, update_mock, assign_mock
+    ):
+        review = builder.review().state(ReviewState.CHANGES_REQUESTED).build()
+
+        github_controller.upsert_review(self.pull_request, review)
+
+        upsert_review_mock.assert_called_once()
 
 
 if __name__ == "__main__":

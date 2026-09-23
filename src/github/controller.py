@@ -81,6 +81,13 @@ def _add_asana_task_to_pull_request(pull_request: PullRequest, task_id: str):
 
 
 def upsert_comment(pull_request: PullRequest, comment: Comment):
+    if SGTM_FEATURE__LINK_ONLY_ENABLED:
+        # Ordinary pull request comments are not relayed. They are not
+        # decisions, and the GitHub card on the task already carries a comment
+        # count, so a reader can see they exist without each one arriving as a
+        # notification.
+        return
+
     pull_request_id = pull_request.id()
     task_id = dynamodb_client.get_asana_id_from_github_node_id(pull_request_id)
     if task_id is None:
@@ -102,11 +109,17 @@ def upsert_review(pull_request: PullRequest, review: Review):
         )
         # TODO: Full sync
     else:
-        logger.info(
-            f"Found task id {task_id} for pull_request {pull_request_id}. Adding review now."
-        )
-        asana_controller.upsert_github_review_to_task(review, task_id)
-        if review.is_approval_or_changes_requested():
+        is_decision = review.is_approval_or_changes_requested()
+        if is_decision or not SGTM_FEATURE__LINK_ONLY_ENABLED:
+            # Only approvals and changes-requested are relayed. A review that
+            # merely comments -- including the empty review GitHub fabricates
+            # for a bare inline comment -- is chatter, and the card already
+            # shows that review activity is happening.
+            logger.info(
+                f"Found task id {task_id} for pull_request {pull_request_id}. Adding review now."
+            )
+            asana_controller.upsert_github_review_to_task(review, task_id)
+        if is_decision:
             assign_pull_request_to_author(pull_request)
         asana_controller.update_task(pull_request, task_id)
 
