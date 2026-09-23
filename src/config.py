@@ -33,3 +33,9 @@ SGTM_FEATURE__AUTOCOMPLETE_ENABLED = is_feature_flag_enabled(
 SGTM_FEATURE__AUTOMERGE_ENABLED = is_feature_flag_enabled(
     "SGTM_FEATURE__AUTOMERGE_ENABLED"
 )
+
+# When enabled, SGTM never creates Asana tasks. It syncs onto the task the
+# author linked in the pull request body, and does nothing when there is none.
+SGTM_FEATURE__LINK_ONLY_ENABLED = is_feature_flag_enabled(
+    "SGTM_FEATURE__LINK_ONLY_ENABLED"
+)

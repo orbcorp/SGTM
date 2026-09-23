@@ -287,44 +287,110 @@ _review_action_to_text_map: Dict[ReviewState, str] = {
 }
 
 
+# The task-link section opens in one of two forms. A markdown heading, which is
+# what the PR template renders; or an inline marker, which needs the colon --
+# without it "Task Link is not required, see <url>" would read as a marker and
+# bind the pull request to whatever that sentence happened to mention.
+_MARKER = r"(?:task\s*link|asana\s*tasks?)"
+_TASK_LINK_HEADING = re.compile(
+    rf"^\s*#{{1,6}}\s*{_MARKER}\s*:?\s*(?P<rest>.*)$", re.IGNORECASE
+)
+_TASK_LINK_INLINE = re.compile(
+    rf"^\s*{_MARKER}\s*:\s*(?P<rest>.*)$", re.IGNORECASE
+)
+_MARKDOWN_HEADING = re.compile(r"^\s*#{1,6}\s")
+_HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
+_SGTM_INJECTED_LINK = re.compile(
+    r"Pull Request synchronized with \[Asana task\]\((?P<url>[^)]*)\)", re.IGNORECASE
+)
+
+# Asana task urls come in two shapes, and only the task id is reliable:
+#   https://app.asana.com/0/<project>/<task>
+#   https://app.asana.com/1/<workspace>/project/<project>/task/<task>
+# Matching the shape rather than "the last number in the string" keeps a
+# trailing "?project=42" or "(see PR-1234)" from being read as a task.
+_ASANA_TASK_URL = re.compile(
+    r"https?://app\.asana\.com/(?:"
+    r"1/\d+/(?:[a-z_]+/\d+/)*task/(?P<new>\d+)"
+    r"|"
+    r"0/\d+/(?P<old>\d+)"
+    r")",
+    re.IGNORECASE,
+)
+
+# Asana gids are long. A short number came from prose, not from a task.
+_MIN_TASK_ID_LENGTH = 9
+
+
+def _task_link_section(body: str) -> str:
+    """
+    Returns the part of a PR description that belongs to the task-link section.
+
+    Scoped deliberately: pull requests routinely mention *other* Asana tasks in
+    prose ("Not addressed here: ...", "Related but separate: ..."), and reading
+    the whole body would bind the PR to whichever of those came first.
+
+    Html comments are dropped before matching, because the PR template carries
+    an example Asana url inside one. SGTM's own injected link is dropped too,
+    so it can never link the task it just created.
+    """
+    text = _SGTM_INJECTED_LINK.sub("", _HTML_COMMENT.sub("", body))
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        heading = _TASK_LINK_HEADING.match(line)
+        marker = heading or _TASK_LINK_INLINE.match(line)
+        if marker is None:
+            continue
+
+        section = [marker.group("rest")]
+        for following in lines[index + 1 :]:
+            if _MARKDOWN_HEADING.match(following):
+                break
+            # A heading owns everything up to the next heading, blank lines
+            # included -- an intro paragraph above the url is still the same
+            # section. An inline marker has no closing delimiter, so it ends at
+            # the first blank line after something was written.
+            if (
+                not heading
+                and not following.strip()
+                and any(collected.strip() for collected in section)
+            ):
+                break
+            section.append(following)
+        return "\n".join(section)
+    return ""
+
+
 def get_linked_task_ids(pull_request: PullRequest) -> List[str]:
     """
-    Extracts linked task ids from the body of the PR.
-    We expect linked tasks to be in the description in a line under the line containing "Asana tasks:".
+    Extracts the Asana task ids a pull request links, from the task-link section
+    of its description.
 
-    :return: Returns a list of task ids.
+    :return: Returns a list of task ids, in the order they appear.
     """
-    body_lines = pull_request.body().splitlines()
-    stripped_body_lines = (line.strip() for line in body_lines)
-    task_url_line = None
-    seen_asana_tasks_line = False
-    task_ids = []
-    for line in stripped_body_lines:
-        if seen_asana_tasks_line:
-            task_url_line = line
-            break
-        if line.startswith("Asana tasks:") or line.startswith("Task Link:"):
-            logger.info("Found Asana tasks line: ", line)
-            seen_asana_tasks_line = True
-            split_line = line.split()
-            # Grab any task urls in that line
-            for url in split_line[2:]:
-                maybe_id = re.search("\d+(?!.*\d)", url)
-                if maybe_id is not None:
-                    task_ids.append(maybe_id.group())
+    task_ids: List[str] = []
+    for match in _ASANA_TASK_URL.finditer(_task_link_section(pull_request.body())):
+        task_id = match.group("new") or match.group("old")
+        if len(task_id) >= _MIN_TASK_ID_LENGTH and task_id not in task_ids:
+            task_ids.append(task_id)
+    return task_ids
 
 
-    # Grab any task urls in the next line
-    if task_url_line:
-        logger.info("Line after Asana tasks line: ", task_url_line)
-        task_urls = task_url_line.split()
-        for url in task_urls:
-            maybe_id = re.search("\d+(?!.*\d)", url)
-            if maybe_id is not None:
-                task_ids.append(maybe_id.group())
-        return task_ids
-    else:
-        return []
+def is_task_created_by_sgtm(pull_request: PullRequest, task_id: str) -> bool:
+    """
+    Whether SGTM created this task for the pull request, judged by the link SGTM
+    injects into the description when it does.
+
+    The task id in that link has to match, not just the link's presence: a
+    description copied from another pull request -- a stack, or a reused
+    description -- carries that pull request's link along, and must not make the
+    author's own task look like one SGTM is free to overwrite.
+    """
+    for injected in _SGTM_INJECTED_LINK.finditer(pull_request.body()):
+        url = _ASANA_TASK_URL.search(injected.group("url"))
+        if url is not None and (url.group("new") or url.group("old")) == task_id:
+            return True
+    return False
 
 
 def asana_comment_from_github_review(review: Review) -> str:
@@ -436,6 +502,11 @@ def _task_completion_from_pull_request(pull_request: PullRequest) -> StatusReaso
             False,
             "the pull request hasn't yet been approved by a reviewer after merging.",
         )
+
+
+def task_followers_from_pull_request(pull_request: PullRequest) -> List[str]:
+    """Followers alone, without the Asana round trip that custom fields need."""
+    return _task_followers_from_pull_request(pull_request)
 
 
 def _task_followers_from_pull_request(pull_request: PullRequest):

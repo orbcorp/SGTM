@@ -2,6 +2,7 @@ from typing import List, Iterator, Dict, Optional
 from typing_extensions import Literal
 import asana  # type: ignore
 from src.config import ASANA_API_KEY
+from src.logger import logger
 
 # See: https://developers.asana.com/docs/input-output-options
 # As we use more opt_fields, add to this list
@@ -110,6 +111,20 @@ class AsanaClient(object):
         )
         self.asana_api_client.stories.delete(comment_id)
 
+    def task_exists(self, task_id: str) -> bool:
+        """
+        Whether the task can be read with the SGTM user's credentials. False
+        covers both "no such task" and "we cannot see it" -- a deleted task,
+        or a private project the SGTM user is not a member of
+        """
+        validate_object_id(task_id, "AsanaClient.task_exists requires a task_id")
+        try:
+            self.asana_api_client.tasks.find_by_id(task_id)
+            return True
+        except Exception as error:
+            logger.info(f"Asana task {task_id} is not reachable: {error}")
+            return False
+
     def get_project_custom_fields(self, project_id: str) -> Iterator[Dict]:
         return self.asana_api_client.custom_field_settings.find_by_project(project_id)
 
@@ -170,6 +185,10 @@ def add_comment(task_id: str, comment_body: str) -> str:
     user. Returns the object id of the comment
     """
     return AsanaClient.singleton().add_comment(task_id, comment_body)
+
+
+def task_exists(task_id: str) -> bool:
+    return AsanaClient.singleton().task_exists(task_id)
 
 
 def get_project_custom_fields(project_id: str) -> Iterator[Dict]:

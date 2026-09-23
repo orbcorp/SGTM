@@ -4,6 +4,7 @@ from . import helpers as asana_helpers
 from . import logic as asana_logic
 from src.github.models import Comment, PullRequest, Review
 from src.logger import logger
+from src.config import SGTM_FEATURE__LINK_ONLY_ENABLED
 from src.dynamodb import client as dynamodb_client
 from src.github import helpers as github_helpers
 
@@ -19,10 +20,29 @@ def create_task(repository_id: str) -> Optional[str]:
         return asana_client.create_task(project_id, due_date_str=due_date_str)
 
 
+def task_is_reachable(task_id: str) -> bool:
+    return asana_client.task_exists(task_id)
+
+
 def update_task(pull_request: PullRequest, task_id: str):
     task_url = asana_helpers.task_url_from_task_id(task_id)
     pr_url = pull_request.url()
     logger.info(f"Updating task {task_url} for pull request {pr_url}")
+
+    if SGTM_FEATURE__LINK_ONLY_ENABLED and not asana_helpers.is_task_created_by_sgtm(
+        pull_request, task_id
+    ):
+        # Never write a field on a task SGTM did not create -- additions only.
+        # Tasks SGTM created before the flag flipped keep their full sync, so
+        # they still complete when their pull request merges or closes.
+        # The pull request announces itself: codez's create_asana_attachment
+        # workflow attaches the GitHub card, which is its own story in the
+        # activity feed. A comment here would just duplicate it.
+        followers = asana_helpers.task_followers_from_pull_request(pull_request)
+        if followers:
+            asana_client.add_followers(task_id, followers)
+        maybe_complete_tasks_on_merge(pull_request)
+        return
 
     fields = asana_helpers.extract_task_fields_from_pull_request(pull_request)
 
@@ -34,7 +54,8 @@ def update_task(pull_request: PullRequest, task_id: str):
         if k in ("assignee", "name", "html_notes", "completed", "custom_fields")
     }
     asana_client.update_task(task_id, update_task_fields)
-    asana_client.add_followers(task_id, fields["followers"])
+    if fields["followers"]:
+        asana_client.add_followers(task_id, fields["followers"])
     maybe_complete_tasks_on_merge(pull_request)
 
 
