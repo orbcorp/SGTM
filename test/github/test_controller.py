@@ -127,10 +127,11 @@ class LinkOnlyTest(MockDynamoDbTestCase):
     )
 
     @patch.object(github_controller, "SGTM_FEATURE__LINK_ONLY_ENABLED", True)
+    @patch.object(asana_controller, "task_is_reachable", return_value=True)
     @patch.object(asana_controller, "update_task")
     @patch.object(asana_controller, "create_task")
     def test_links_the_existing_task_instead_of_creating_one(
-        self, create_task_mock, update_task_mock
+        self, create_task_mock, update_task_mock, reachable_mock
     ):
         pull_request = builder.pull_request().body(self.BODY_WITH_LINK).build()
 
@@ -160,10 +161,11 @@ class LinkOnlyTest(MockDynamoDbTestCase):
         )
 
     @patch.object(github_controller, "SGTM_FEATURE__LINK_ONLY_ENABLED", False)
+    @patch.object(asana_controller, "task_is_reachable", return_value=True)
     @patch.object(asana_controller, "update_task")
     @patch.object(asana_controller, "create_task")
     def test_still_creates_while_the_flag_is_off(
-        self, create_task_mock, update_task_mock
+        self, create_task_mock, update_task_mock, reachable_mock
     ):
         # Milestone 3 ships the parser in dry-run: it resolves and logs the
         # linked task, but behaviour is unchanged until the flag flips.
@@ -179,9 +181,12 @@ class LinkOnlyTest(MockDynamoDbTestCase):
         update_task_mock.assert_called_with(pull_request, new_task_id)
 
     @patch.object(github_controller, "SGTM_FEATURE__LINK_ONLY_ENABLED", True)
+    @patch.object(asana_controller, "task_is_reachable", return_value=True)
     @patch.object(asana_controller, "update_task")
     @patch.object(asana_controller, "create_task")
-    def test_an_existing_mapping_still_wins(self, create_task_mock, update_task_mock):
+    def test_an_existing_mapping_still_wins(
+        self, create_task_mock, update_task_mock, reachable_mock
+    ):
         # A pull request SGTM already made a task for keeps that task, even if
         # the author later pastes a different link.
         pull_request = builder.pull_request().body(self.BODY_WITH_LINK).build()
@@ -194,6 +199,46 @@ class LinkOnlyTest(MockDynamoDbTestCase):
 
         create_task_mock.assert_not_called()
         update_task_mock.assert_called_with(pull_request, existing)
+
+    @patch.object(github_controller, "SGTM_FEATURE__LINK_ONLY_ENABLED", True)
+    @patch.object(asana_controller, "task_is_reachable", return_value=False)
+    @patch.object(asana_controller, "update_task")
+    @patch.object(asana_controller, "create_task")
+    def test_refuses_to_bind_to_a_task_it_cannot_read(
+        self, create_task_mock, update_task_mock, reachable_mock
+    ):
+        # A private project, or a deleted task. Binding is permanent and the
+        # Lambda cannot delete the row, so a bad bind would wedge the PR.
+        pull_request = builder.pull_request().body(self.BODY_WITH_LINK).build()
+
+        github_controller.upsert_pull_request(pull_request)
+
+        reachable_mock.assert_called_once_with(self.LINKED_TASK)
+        create_task_mock.assert_not_called()
+        update_task_mock.assert_not_called()
+        self.assertIsNone(
+            dynamodb_client.get_asana_id_from_github_node_id(pull_request.id())
+        )
+
+    @patch.object(github_controller, "SGTM_FEATURE__LINK_ONLY_ENABLED", True)
+    @patch.object(asana_controller, "task_is_reachable", return_value=False)
+    @patch.object(asana_controller, "update_task")
+    @patch.object(asana_controller, "create_task")
+    def test_an_unreachable_task_is_retried_once_it_becomes_readable(
+        self, create_task_mock, update_task_mock, reachable_mock
+    ):
+        pull_request = builder.pull_request().body(self.BODY_WITH_LINK).build()
+        github_controller.upsert_pull_request(pull_request)
+
+        # the author fixes the link, or is granted access
+        reachable_mock.return_value = True
+        github_controller.upsert_pull_request(pull_request)
+
+        update_task_mock.assert_called_with(pull_request, self.LINKED_TASK)
+        self.assertEqual(
+            dynamodb_client.get_asana_id_from_github_node_id(pull_request.id()),
+            self.LINKED_TASK,
+        )
 
 
 class LinkOnlyRelayTest(MockDynamoDbTestCase):

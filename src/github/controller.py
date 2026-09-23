@@ -18,13 +18,23 @@ def _linked_task(pull_request: PullRequest) -> Optional[str]:
     that the hit rate can be measured from CloudWatch before the flag is flipped.
     """
     task_ids = asana_helpers.get_linked_task_ids(pull_request)
-    if task_ids:
+    if not task_ids:
+        logger.info(f"LINK pr={pull_request.number()} result=no_link")
+        return None
+
+    task_id = task_ids[0]
+    if not asana_controller.task_is_reachable(task_id):
+        # Binding is permanent -- the mapping is read before the body on every
+        # later event, and the Lambda has no DeleteItem on sgtm-objects to undo
+        # it. Refusing to bind leaves the pull request unbound, so a corrected
+        # link is picked up on the next event instead of wedging the PR.
         logger.info(
-            f"LINK pr={pull_request.number()} result=linked task={task_ids[0]}"
+            f"LINK pr={pull_request.number()} result=unreachable task={task_id}"
         )
-        return task_ids[0]
-    logger.info(f"LINK pr={pull_request.number()} result=no_link")
-    return None
+        return None
+
+    logger.info(f"LINK pr={pull_request.number()} result=linked task={task_id}")
+    return task_id
 
 
 def upsert_pull_request(pull_request: PullRequest):

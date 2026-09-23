@@ -20,6 +20,11 @@ def create_task(repository_id: str) -> Optional[str]:
         return asana_client.create_task(project_id, due_date_str=due_date_str)
 
 
+def task_is_reachable(task_id: str) -> bool:
+    """Whether we can read the task -- checked before binding to it."""
+    return asana_client.task_exists(task_id)
+
+
 def update_task(pull_request: PullRequest, task_id: str):
     task_url = asana_helpers.task_url_from_task_id(task_id)
     pr_url = pull_request.url()
