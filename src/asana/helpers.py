@@ -301,7 +301,7 @@ _TASK_LINK_INLINE = re.compile(
 _MARKDOWN_HEADING = re.compile(r"^\s*#{1,6}\s")
 _HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 _SGTM_INJECTED_LINK = re.compile(
-    r"Pull Request synchronized with \[Asana task\]\([^)]*\)", re.IGNORECASE
+    r"Pull Request synchronized with \[Asana task\]\((?P<url>[^)]*)\)", re.IGNORECASE
 )
 
 # Asana task urls come in two shapes, and only the task id is reliable:
@@ -374,6 +374,23 @@ def get_linked_task_ids(pull_request: PullRequest) -> List[str]:
         if len(task_id) >= _MIN_TASK_ID_LENGTH and task_id not in task_ids:
             task_ids.append(task_id)
     return task_ids
+
+
+def is_task_created_by_sgtm(pull_request: PullRequest, task_id: str) -> bool:
+    """
+    Whether SGTM created this task for the pull request, judged by the link SGTM
+    injects into the description when it does.
+
+    The task id in that link has to match, not just the link's presence: a
+    description copied from another pull request -- a stack, or a reused
+    description -- carries that pull request's link along, and must not make the
+    author's own task look like one SGTM is free to overwrite.
+    """
+    for injected in _SGTM_INJECTED_LINK.finditer(pull_request.body()):
+        url = _ASANA_TASK_URL.search(injected.group("url"))
+        if url is not None and (url.group("new") or url.group("old")) == task_id:
+            return True
+    return False
 
 
 def asana_comment_from_github_review(review: Review) -> str:

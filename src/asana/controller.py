@@ -29,8 +29,12 @@ def update_task(pull_request: PullRequest, task_id: str):
     pr_url = pull_request.url()
     logger.info(f"Updating task {task_url} for pull request {pr_url}")
 
-    if SGTM_FEATURE__LINK_ONLY_ENABLED:
+    if SGTM_FEATURE__LINK_ONLY_ENABLED and not asana_helpers.is_task_created_by_sgtm(
+        pull_request, task_id
+    ):
         # Never write a field on a task SGTM did not create -- additions only.
+        # Tasks SGTM created before the flag flipped keep their full sync, so
+        # they still complete when their pull request merges or closes.
         # The pull request announces itself: codez's create_asana_attachment
         # workflow attaches the GitHub card, which is its own story in the
         # activity feed. A comment here would just duplicate it.
