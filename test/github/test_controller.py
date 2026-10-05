@@ -3,6 +3,7 @@ from uuid import uuid4
 from test.impl.mock_dynamodb_test_case import MockDynamoDbTestCase
 import src.github.client as github_client
 import src.github.controller as github_controller
+import src.asana.client as asana_client
 import src.asana.controller as asana_controller
 import src.dynamodb.client as dynamodb_client
 from test.impl.builders import builder
@@ -67,13 +68,13 @@ class GithubControllerTest(MockDynamoDbTestCase):
             "original body\s*Pull Request synchronized with \[Asana task\]",
         )
 
+    @patch.object(asana_client, "add_comment")
     @patch.object(asana_controller, "update_task")
-    @patch.object(asana_controller, "upsert_github_comment_to_task")
     def test_upsert_comment_when_task_id_already_found_in_dynamodb(
-        self, add_comment_mock, update_task_mock
+        self, update_task_mock, add_comment_mock
     ):
-        # If the task id is found in dynamodb, then we just update (don't
-        # attempt to create)
+        # The comment is not relayed to Asana, but the task is still updated,
+        # since comments feed its followers and post-merge approval
         pull_request = builder.pull_request().build()
         comment = builder.comment().build()
 
@@ -85,13 +86,15 @@ class GithubControllerTest(MockDynamoDbTestCase):
 
         github_controller.upsert_comment(pull_request, comment)
 
-        add_comment_mock.assert_called_with(comment, existing_task_id)
+        add_comment_mock.assert_not_called()
         update_task_mock.assert_called_with(pull_request, existing_task_id)
+        self.assertIsNone(
+            dynamodb_client.get_asana_id_from_github_node_id(comment.id())
+        )
 
     @patch.object(asana_controller, "update_task")
-    @patch.object(asana_controller, "upsert_github_comment_to_task")
     def test_upsert_comment_when_task_id_not_found_in_dynamodb(
-        self, add_comment_mock, update_task_mock
+        self, update_task_mock
     ):
         pull_request = builder.pull_request().build()
         comment = builder.comment().build()
