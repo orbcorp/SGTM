@@ -4,7 +4,6 @@ from datetime import datetime, timedelta
 from typing import Callable, Match, Optional, List, Dict
 from src.dynamodb import client as dynamodb_client
 from src.github.models import (
-    Comment,
     PullRequest,
     Review,
     ReviewState,
@@ -216,25 +215,6 @@ def _transform_github_mentions_to_asana_mentions(text: str) -> str:
     )
 
 
-def asana_comment_from_github_comment(comment: Comment) -> str:
-    """
-    Extracts the GitHub author and comment text from a GitHub Comment, and transforms them into
-    a suitable html comment string for Asana. This will involve looking up the GitHub author in
-    DynamoDb to determine the Asana domain user id of the comment author and any @mentioned
-    GitHub users.
-    """
-    github_author = comment.author()
-    display_name = _asana_display_name_for_github_user(github_author)
-    comment_text = _format_github_text_for_asana(comment.body())
-    return _wrap_in_tag("body")(
-        display_name
-        + " "
-        + _wrap_in_tag("A", attrs={"href": comment.url()})("commented:")
-        + "\n"
-        + comment_text
-    )
-
-
 _image_extension_to_type = {
     ".png": "image/png",
     ".jpg": "image/jpg",
@@ -312,7 +292,6 @@ def get_linked_task_ids(pull_request: PullRequest) -> List[str]:
                 maybe_id = re.search("\d+(?!.*\d)", url)
                 if maybe_id is not None:
                     task_ids.append(maybe_id.group())
-
 
     # Grab any task urls in the next line
     if task_url_line:
