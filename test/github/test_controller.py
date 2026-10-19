@@ -93,9 +93,7 @@ class GithubControllerTest(MockDynamoDbTestCase):
         )
 
     @patch.object(asana_controller, "update_task")
-    def test_upsert_comment_when_task_id_not_found_in_dynamodb(
-        self, update_task_mock
-    ):
+    def test_upsert_comment_when_task_id_not_found_in_dynamodb(self, update_task_mock):
         pull_request = builder.pull_request().build()
         comment = builder.comment().build()
 

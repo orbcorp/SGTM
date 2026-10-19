@@ -293,7 +293,6 @@ def get_linked_task_ids(pull_request: PullRequest) -> List[str]:
                 if maybe_id is not None:
                     task_ids.append(maybe_id.group())
 
-
     # Grab any task urls in the next line
     if task_url_line:
         logger.info("Line after Asana tasks line: ", task_url_line)
