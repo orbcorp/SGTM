@@ -20,6 +20,7 @@ __tf_vars_file_contents = None
 
 
 def _parse_tfvars_file() -> dict:
+    global __tf_vars_file_contents
     if __tf_vars_file_contents is None:
         directory = os.path.dirname(__file__)
         file_name = os.path.join(directory, "../terraform/terraform.tfvars.json")

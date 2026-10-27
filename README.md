@@ -62,7 +62,7 @@ NOTE: AWS S3 Bucket names are globally unique, so you will need to choose your o
 2. Save these somewhere that you and others collaborating on this deployment could share (we save ours in an Asana task internally, of course) since these will need to be the same each time you apply new changes.
 
 ### Zip up your code
-From the root of your repository directory, run `./scripts/zip_lambda_code.sh`. This will zip up all of the Python code and dependencies to be pushed to AWS in the next step (the `terraform apply`)
+From the root of your repository directory, run `./scripts/zip_lambda_code.sh`. This will zip up all of the Python code and dependencies to be pushed to AWS in the next step (the `terraform apply`). The script needs [uv](https://docs.astral.sh/uv/) installed, which it uses to fetch Linux wheels for the Lambda runtime.
 
 ### Run setup script
 You'll first need to set up the [Terraform remote state](https://www.terraform.io/docs/state/remote.html) to be the source of truth for the state of your deployed infrastructure.

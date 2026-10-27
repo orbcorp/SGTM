@@ -145,7 +145,7 @@ resource "aws_lambda_function" "sgtm" {
   handler       = "src.handler.handler"
   source_code_hash = filebase64sha256("../build/function.zip")
 
-  runtime = "python3.7"
+  runtime = "python3.13"
 
   timeout = var.lambda_function_timeout
   environment {
@@ -153,7 +153,8 @@ resource "aws_lambda_function" "sgtm" {
       API_KEYS_S3_BUCKET  = var.api_key_s3_bucket_name,
       API_KEYS_S3_KEY     = var.api_key_s3_object,
       SGTM_FEATURE__AUTOMERGE_ENABLED = var.sgtm_feature__automerge_enabled,
-      SGTM_FEATURE__AUTOCOMPLETE_ENABLED = var.sgtm_feature__autocomplete_enabled, 
+      SGTM_FEATURE__AUTOCOMPLETE_ENABLED = var.sgtm_feature__autocomplete_enabled,
+      SSL_CERT_FILE       = "/var/task/certifi/cacert.pem",
     }
   }
 }
@@ -166,7 +167,7 @@ resource "aws_lambda_function" "sgtm_sync_users" {
   handler       = "src.sync_users.handler.handler"
   source_code_hash = filebase64sha256("../build/function.zip")
 
-  runtime = "python3.7"
+  runtime = "python3.13"
 
   timeout = 900
   environment {
@@ -174,6 +175,7 @@ resource "aws_lambda_function" "sgtm_sync_users" {
       API_KEYS_S3_BUCKET     = var.api_key_s3_bucket_name,
       API_KEYS_S3_KEY        = var.api_key_s3_object
       ASANA_USERS_PROJECT_ID = var.asana_users_project_id
+      SSL_CERT_FILE          = "/var/task/certifi/cacert.pem"
     }
   }
 }
