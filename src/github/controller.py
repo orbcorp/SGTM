@@ -43,6 +43,10 @@ def _add_asana_task_to_pull_request(pull_request: PullRequest, task_id: str):
 
 
 def upsert_comment(pull_request: PullRequest, comment: Comment):
+    # The comment itself is not relayed to Asana: discussion belongs on the
+    # pull request, and the GitHub card on the task already shows it is
+    # happening. The task is still updated, since comments feed its followers
+    # and post-merge approval.
     pull_request_id = pull_request.id()
     task_id = dynamodb_client.get_asana_id_from_github_node_id(pull_request_id)
     if task_id is None:
@@ -51,7 +55,6 @@ def upsert_comment(pull_request: PullRequest, comment: Comment):
         )
         # TODO: Full sync
     else:
-        asana_controller.upsert_github_comment_to_task(comment, task_id)
         asana_controller.update_task(pull_request, task_id)
 
 

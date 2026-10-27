@@ -2,7 +2,7 @@ from typing import Optional
 from . import client as asana_client
 from . import helpers as asana_helpers
 from . import logic as asana_logic
-from src.github.models import Comment, PullRequest, Review
+from src.github.models import PullRequest, Review
 from src.logger import logger
 from src.dynamodb import client as dynamodb_client
 from src.github import helpers as github_helpers
@@ -43,31 +43,6 @@ def maybe_complete_tasks_on_merge(pull_request: PullRequest):
         task_ids_to_complete_on_merge = asana_helpers.get_linked_task_ids(pull_request)
         for complete_on_merge_task_id in task_ids_to_complete_on_merge:
             asana_client.complete_task(complete_on_merge_task_id)
-
-
-def upsert_github_comment_to_task(comment: Comment, task_id: str):
-    github_comment_id = comment.id()
-    asana_comment_id = dynamodb_client.get_asana_id_from_github_node_id(
-        github_comment_id
-    )
-    if asana_comment_id is None:
-        logger.info(f"Adding comment {github_comment_id} to task {task_id}")
-
-        asana_helpers.create_attachments(comment.body(), task_id)
-
-        asana_comment_id = asana_client.add_comment(
-            task_id, asana_helpers.asana_comment_from_github_comment(comment)
-        )
-        dynamodb_client.insert_github_node_to_asana_id_mapping(
-            github_comment_id, asana_comment_id
-        )
-    else:
-        logger.info(
-            f"Comment {github_comment_id} already synced to task {task_id}. Updating."
-        )
-        asana_client.update_comment(
-            asana_comment_id, asana_helpers.asana_comment_from_github_comment(comment)
-        )
 
 
 def upsert_github_review_to_task(review: Review, task_id: str):
