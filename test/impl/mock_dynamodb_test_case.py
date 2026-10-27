@@ -3,13 +3,12 @@ Test case that should be used for tests that require integration with dynamodb
 or other external resources.
 """
 import boto3  # type: ignore
-from moto import mock_dynamodb2  # type: ignore
+from moto import mock_aws  # type: ignore
 from src.config import OBJECTS_TABLE, USERS_TABLE, LOCK_TABLE
 from .base_test_case_class import BaseClass
 from .mock_dynamodb_test_data_helper import MockDynamoDbTestDataHelper
 
 
-@mock_dynamodb2
 class MockDynamoDbTestCase(BaseClass):
 
     """
@@ -24,15 +23,18 @@ class MockDynamoDbTestCase(BaseClass):
     """
     test_data = None
 
+    aws_mock = None
+
     @classmethod
     def tearDownClass(cls):
         cls.test_data = None
         cls.client = None
-        mock_dynamodb2().__exit__()
+        cls.aws_mock.stop()
 
     @classmethod
     def setUpClass(cls):
-        mock_dynamodb2().__enter__()
+        cls.aws_mock = mock_aws()
+        cls.aws_mock.start()
         client = boto3.client("dynamodb")
 
         # our DynamoDb Schema #DynamoDbSchema
