@@ -14,6 +14,14 @@ remote_state {
     dynamodb_table = "sgtm_terraform_state_lock"
     region = "us-east-1"
 
-    key = "${path_relative_to_include()}/terraform.tfstate"
+    key = "terraform.tfstate"
+  }
+}
+
+# Terraform runs from a copy in .terragrunt-cache, so put the bundle where main.tf's relative path points
+terraform {
+  before_hook "copy_lambda_bundle" {
+    commands = concat(get_terraform_commands_that_need_vars(), ["validate"])
+    execute  = ["sh", "-c", "mkdir -p ../build && cp '${get_terragrunt_dir()}/../build/function.zip' ../build/function.zip"]
   }
 }
