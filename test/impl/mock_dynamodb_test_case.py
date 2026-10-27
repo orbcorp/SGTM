@@ -43,6 +43,7 @@ class MockDynamoDbTestCase(BaseClass):
                 {"AttributeName": "github-node", "AttributeType": "S",}
             ],
             TableName=OBJECTS_TABLE,
+            BillingMode="PAY_PER_REQUEST",
             KeySchema=[{"AttributeName": "github-node", "KeyType": "HASH",}],
         )
 
@@ -51,6 +52,7 @@ class MockDynamoDbTestCase(BaseClass):
                 {"AttributeName": "github/handle", "AttributeType": "S",},
             ],
             TableName=USERS_TABLE,
+            BillingMode="PAY_PER_REQUEST",
             KeySchema=[{"AttributeName": "github/handle", "KeyType": "HASH",}],
         )
 
@@ -60,6 +62,7 @@ class MockDynamoDbTestCase(BaseClass):
                 {"AttributeName": "sort_key", "AttributeType": "S",},
             ],
             TableName=LOCK_TABLE,
+            BillingMode="PAY_PER_REQUEST",
             KeySchema=[
                 {"AttributeName": "lock_key", "KeyType": "HASH",},
                 {"AttributeName": "sort_key", "KeyType": "RANGE",},
