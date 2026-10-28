@@ -1,3 +1,13 @@
+terraform {
+  required_providers {
+    aws = {
+      source = "hashicorp/aws"
+      # 6.0 removed stage_name from aws_api_gateway_deployment
+      version = "~> 5.100"
+    }
+  }
+}
+
 provider "aws" {
   region = var.aws_region
 }
