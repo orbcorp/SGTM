@@ -6,6 +6,7 @@ import src.github.controller as github_controller
 import src.asana.client as asana_client
 import src.asana.controller as asana_controller
 import src.dynamodb.client as dynamodb_client
+from src.github.models import ReviewState
 from test.impl.builders import builder
 
 
@@ -99,6 +100,71 @@ class GithubControllerTest(MockDynamoDbTestCase):
 
         github_controller.upsert_comment(pull_request, comment)
         # TODO: Test that a full sync was performed
+
+    @patch.object(github_controller, "assign_pull_request_to_author")
+    @patch.object(asana_controller, "update_task")
+    @patch.object(asana_controller, "upsert_github_review_to_task")
+    def test_upsert_review_relays_decisions(
+        self, upsert_review_mock, update_task_mock, assign_mock
+    ):
+        for state in (ReviewState.APPROVED, ReviewState.CHANGES_REQUESTED):
+            with self.subTest(state=state):
+                upsert_review_mock.reset_mock()
+                pull_request = builder.pull_request().build()
+                review = builder.review().state(state).build()
+                task_id = uuid4().hex
+                dynamodb_client.insert_github_node_to_asana_id_mapping(
+                    pull_request.id(), task_id
+                )
+
+                github_controller.upsert_review(pull_request, review)
+
+                upsert_review_mock.assert_called_once_with(review, task_id)
+                assign_mock.assert_called_with(pull_request)
+                update_task_mock.assert_called_with(pull_request, task_id)
+
+    @patch.object(github_controller, "assign_pull_request_to_author")
+    @patch.object(asana_controller, "update_task")
+    @patch.object(asana_controller, "upsert_github_review_to_task")
+    def test_upsert_review_does_not_relay_comment_only_reviews(
+        self, upsert_review_mock, update_task_mock, assign_mock
+    ):
+        # Covers both a review with a body and the empty review GitHub
+        # creates for a bare inline comment
+        for body in ("Some thoughts", ""):
+            with self.subTest(body=body):
+                pull_request = builder.pull_request().build()
+                review = builder.review(body).state(ReviewState.COMMENTED).build()
+                task_id = uuid4().hex
+                dynamodb_client.insert_github_node_to_asana_id_mapping(
+                    pull_request.id(), task_id
+                )
+
+                github_controller.upsert_review(pull_request, review)
+
+                upsert_review_mock.assert_not_called()
+                assign_mock.assert_not_called()
+                # The task is still updated, since reviews feed its followers
+                # and completion
+                update_task_mock.assert_called_with(pull_request, task_id)
+
+    @patch.object(asana_controller, "update_task")
+    @patch.object(asana_controller, "upsert_github_review_to_task")
+    def test_upsert_review_keeps_updating_a_review_already_relayed(
+        self, upsert_review_mock, update_task_mock
+    ):
+        # e.g. an approval that was relayed and has since been dismissed
+        pull_request = builder.pull_request().build()
+        review = builder.review().state(ReviewState.DISMISSED).build()
+        task_id = uuid4().hex
+        dynamodb_client.insert_github_node_to_asana_id_mapping(
+            pull_request.id(), task_id
+        )
+        dynamodb_client.insert_github_node_to_asana_id_mapping(review.id(), uuid4().hex)
+
+        github_controller.upsert_review(pull_request, review)
+
+        upsert_review_mock.assert_called_once_with(review, task_id)
 
     @patch.object(github_client, "set_pull_request_assignee")
     def test_assign_pull_request_to_author(self, set_pr_assignee_mock):

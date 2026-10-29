@@ -67,11 +67,21 @@ def upsert_review(pull_request: PullRequest, review: Review):
         )
         # TODO: Full sync
     else:
-        logger.info(
-            f"Found task id {task_id} for pull_request {pull_request_id}. Adding review now."
+        is_decision = review.is_approval_or_changes_requested()
+        # Only approvals and changes-requested are relayed. A review that only
+        # comments -- including the empty review GitHub creates for a bare
+        # inline comment -- stays on the pull request. A review relayed
+        # earlier is still updated, so a dismissed approval doesn't keep
+        # reading "approved" on the task.
+        already_relayed = (
+            dynamodb_client.get_asana_id_from_github_node_id(review.id()) is not None
         )
-        asana_controller.upsert_github_review_to_task(review, task_id)
-        if review.is_approval_or_changes_requested():
+        if is_decision or already_relayed:
+            logger.info(
+                f"Found task id {task_id} for pull_request {pull_request_id}. Adding review now."
+            )
+            asana_controller.upsert_github_review_to_task(review, task_id)
+        if is_decision:
             assign_pull_request_to_author(pull_request)
         asana_controller.update_task(pull_request, task_id)
 
